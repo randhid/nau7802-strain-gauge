@@ -4,10 +4,10 @@ use micro_rdk::DoCommand;
 use micro_rdk::common::config::ConfigType;
 use micro_rdk::common::status::{Status, StatusError};
 use micro_rdk::common::registry::{ComponentRegistry, RegistryError, Dependency};
+use micro_rdk::common::i2c::I2cHandleType
 
 // correct crates?
 use micro_rdk::board::Board
-use micro_rdk::i2c::I2CHandle
 
 use micro_rdk::common::sensor::{Sensor, SensorType, Readings, SensorError};
 
@@ -27,7 +27,7 @@ const NAU7802_REG_ADC: u8 = 0x12;
 #[derive(DoCommand)]
 
 pub struct Nau7802 {
-    i2c_handle: I2CHandleType,
+    i2c_handle: I2cHandleType,
     i2c_address: u8
 }
 
@@ -40,7 +40,7 @@ impl Nau7802 {
 
     // new wasn't made from the most recent sensor example, following from 
     // https://github.com/viamrobotics/micro-rdk/blob/56615f4ace690f0571bba33d55cb530544c56aae/micro-rdk/src/common/mpu6050.rs#L57
-    pub fn new(mut i2c_handle; I2CHandleType, i2c_address: u8) -> Result<Self, SensorError>{
+    pub fn new(mut i2c_handle; I2cHandleType, i2c_address: u8) -> Result<Self, SensorError>{
     // Reset the device
     i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_PU_CTRL, 0x01])
 
@@ -60,7 +60,7 @@ impl Nau7802 {
             return Err(SensorError::ConfigError("Nau7802 missing board attribute"));
         }
         let board_unwrapped = board.unwrap();
-        let i2c_handle: I2CHandleType;
+        let i2c_handle: I2cHandleType;
 
         if let Ok(i2c_name) = cfg.get_attributes::<String>("i2c_bus"){
             i2c_handle = board_unwrapped.get_i2c_by_name(i2c_name)?;
