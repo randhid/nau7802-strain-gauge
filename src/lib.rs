@@ -3,31 +3,27 @@ use std::collections::HashMap;
 use micro_rdk::DoCommand;
 use micro_rdk::common::config::ConfigType;
 use micro_rdk::common::status::{Status, StatusError};
-use micro_rdk::common::registry::{ComponentRegistry, RegistryError, Dependency};
-use micro_rdk::common::i2c::I2cHandleType
+use micro_rdk::common::registry::{ComponentRegistry, RegistryError, Dependency, get_board_from_dependencies};
 
 // correct crates?
-use micro_rdk::board::Board
-
-use micro_rdk::common::sensor::{Sensor, SensorType, Readings, SensorError};
-
+use micro_rdk::common::board::Board;
+use micro_rdk::common::i2c::I2CHandle;
+use micro_rdk::common::sensor::{Sensor, SensorType, Readings, SensorError, GenericReadingsResult, SensorResult, TypedReadingsResult, SensorT};
+use micro_rdk::common::analog::AnalogError;
 
 pub fn register_models(registry: &mut ComponentRegistry) -> Result<(), RegistryError> {
     registry.register_sensor("my_sensor", &Nau7802::from_config)
 }
 
 const NAU7802_I2C_ADDRESS: u8 = 0x2A;
-
 const NAU7802_REG_PU_CTRL: u8 = 0x00;
 const NAU7802_REG_CTRL1: u8 = 0x01;
 const NAU7802_REG_CTRL2: u8 = 0x02;
 const NAU7802_REG_ADC: u8 = 0x12;
 
-// implement DoCommand "tare" "calibrate" 
 #[derive(DoCommand)]
-
 pub struct Nau7802 {
-    i2c_handle: I2cHandleType,
+    i2c_handle: &dyn I2CHandle,
     i2c_address: u8
 }
 
@@ -40,9 +36,9 @@ impl Nau7802 {
 
     // new wasn't made from the most recent sensor example, following from 
     // https://github.com/viamrobotics/micro-rdk/blob/56615f4ace690f0571bba33d55cb530544c56aae/micro-rdk/src/common/mpu6050.rs#L57
-    pub fn new(mut i2c_handle; I2cHandleType, i2c_address: u8) -> Result<Self, SensorError>{
+    pub fn new(mut i2c_handle: dyn I2CHandle, i2c_address: u8) -> Result<Self, SensorError>{
     // Reset the device
-    i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_PU_CTRL, 0x01])
+    i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_PU_CTRL, 0x01])?;
 
     // configure
     i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_CTRL1, 0x30])?;
@@ -55,12 +51,12 @@ impl Nau7802 {
     }
 
     pub fn from_config(cfg: ConfigType, deps: Vec<Dependency>) -> Result<SensorType,SensorError> {
-        let board = get_board_from_dependencies(dependencies);
+        let board = get_board_from_dependencies(deps);
         if board.is_none() {
             return Err(SensorError::ConfigError("Nau7802 missing board attribute"));
         }
         let board_unwrapped = board.unwrap();
-        let i2c_handle: I2cHandleType;
+        let i2c_handle: I2CHandle;
 
         if let Ok(i2c_name) = cfg.get_attributes::<String>("i2c_bus"){
             i2c_handle = board_unwrapped.get_i2c_by_name(i2c_name)?;
@@ -102,25 +98,27 @@ impl Readings for Nau7802{
 
 impl SensorT<f64> for Nau7802 {
     fn get_readings(&self) -> Result<TypedReadingsResult<f64>, SensorError> {
-    let reading = self.read_adc();
-    let mut x = HashMap:new();
-    x.insert("raw_data".to_string(), reading as f64); // does this even work, do I have to convert?
-    log::debug!("getting raw data from nau7802 succeeded!")
-    Ok(x)
+        let reading = self.read_adc();
+        let mut x = HashMap::new();
+        x.insert("raw_data".to_string(), reading as f64); // does this even work, do I have to convert?
+        //log::debug!("getting raw data from nau7802 succeeded!");
+        Ok(x);
     }
 }
 
-pub fn read_adc(&mut self) -> Result<i32, E> { // i32 -> f64 needed
-    let mut data = [u8; 3];
-    self.i2c_handle.write_read(NAU7802_I2C_ADDRESS, &[NAU7802_REG_ADC], &mut data)?;
-    let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
+impl Nau7802{
+    pub fn read_adc(self) -> Result<i32, AnalogError> { // i32 -> f64 needed
+        let mut data : [u8; 3] = [];
+        self.i2c_handle.write_read(NAU7802_I2C_ADDRESS, &[NAU7802_REG_ADC], &mut data)?;
+        let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
 
-    // Convert to signed 24-bit value
-    let adc_value = if raw_value & 0x800000 != 0 {
-        raw_value | !0xFFFFFF
-    } else {
-        raw_value
-    };
+        // Convert to signed 24-bit value
+        let adc_value = if raw_value & 0x800000 != 0 {
+            raw_value | !0xFFFFFF
+        } else {
+            raw_value
+        };
 
-    Ok(adc_value)
+        Ok(adc_value)
+    }
 }
