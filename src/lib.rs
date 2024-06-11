@@ -9,7 +9,6 @@ use micro_rdk::common::registry::{ComponentRegistry, RegistryError, Dependency, 
 use micro_rdk::common::board::Board;
 use micro_rdk::common::i2c::I2CHandle;
 use micro_rdk::common::sensor::{Sensor, SensorType, Readings, SensorError, GenericReadingsResult, SensorResult, TypedReadingsResult, SensorT};
-use micro_rdk::common::analog::AnalogError;
 
 pub fn register_models(registry: &mut ComponentRegistry) -> Result<(), RegistryError> {
     registry.register_sensor("my_sensor", &Nau7802::from_config)
@@ -107,7 +106,7 @@ impl SensorT<f64> for Nau7802 {
 }
 
 impl Nau7802{
-    pub fn read_adc(self) -> Result<i32, AnalogError> { // i32 -> f64 needed
+    pub fn read_adc(self) -> Result<i32, SensorError> { // i32 -> f64 needed
         let mut data : [u8; 3] = [];
         self.i2c_handle.write_read(NAU7802_I2C_ADDRESS, &[NAU7802_REG_ADC], &mut data)?;
         let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
