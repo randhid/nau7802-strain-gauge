@@ -23,7 +23,9 @@ const NAU7802_REG_CTRL1: u8 = 0x01;
 const NAU7802_REG_CTRL2: u8 = 0x02;
 const NAU7802_REG_ADC: u8 = 0x12;
 
+// implement DoCommand "tare" "calibrate" 
 #[derive(DoCommand)]
+
 pub struct Nau7802 {
     i2c_handle: I2CHandleType,
     i2c_address: u8
