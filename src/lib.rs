@@ -90,7 +90,7 @@ impl Status for Nau7802 {
 
 impl Sensor for Nau7802 {}
 
-impl Readingsfor Nau7802{
+impl Readings for Nau7802{
     fn get_generic_readings(&mut self) -> Result<GenericReadingsResult, SensorError> {
         Ok(self
         .get_readings()?
