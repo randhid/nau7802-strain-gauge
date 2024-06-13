@@ -105,18 +105,18 @@ impl Readings for Nau7802 {
 
 impl SensorT<f64> for Nau7802 {
     fn get_readings(&self) -> Result<TypedReadingsResult<f64>, SensorError> {
-        let reading = self.read_adc();
+        let reading = &self.read_adc()?;
         let mut x = HashMap::new();
-        x.insert("raw_data".to_string(), reading.unwrap() as f64); // does this even work, do I have to convert?
+        x.insert("raw_data".to_string(), *reading as f64); // does this even work, do I have to convert?
         //log::debug!("getting raw data from nau7802 succeeded!");
         Ok(x)
     }
 }
 
 impl Nau7802 {
-    pub fn read_adc(self) -> Result<i32, SensorError> {
+    pub fn read_adc(&self) -> Result<i32, SensorError> {
         // i32 -> f64 needed
-        let mut data: [u8; 3];
+        let mut data: [u8; 3]= [0;3];
         self.i2c_handle.lock().unwrap()
             .write_read_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_ADC], &mut data)?;
         let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
