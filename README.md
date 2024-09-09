@@ -16,7 +16,7 @@ On the new component panel, copy and paste the following attribute template into
 {
     "attirbutes" : {
         "i2c_bus" : <String>,
-        "max_weight_kg": f64,
+        "scale_to_kg": f64,
         }  
 }
 ```

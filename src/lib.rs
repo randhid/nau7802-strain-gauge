@@ -16,7 +16,7 @@ use micro_rdk::common::sensor::{
 };
 
 pub fn register_models(registry: &mut ComponentRegistry) -> Result<(), RegistryError> {
-    registry.register_sensor("my_sensor", &Nau7802::from_config)
+    registry.register_sensor("nau_7802", &Nau7802::from_config)
 }
 
 const NAU7802_I2C_ADDRESS: u8 = 0x2A;
