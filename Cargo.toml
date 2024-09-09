@@ -1,5 +1,5 @@
 [package]
-name = "nau7802-strain-gauge"
+name = "nau-7802"
 version = "0.1.9-rc3"
 edition = "2021"
 authors = ["randhid <rand@viam.com>"]
@@ -7,7 +7,7 @@ resolver = "2"
 rust-version = "1.75"
 
 [dependencies]
-micro-rdk = {git = "https://github.com/viamrobotics/micro-rdk.git", features = ["esp32"], version = "0.1.9-rc3", rev = "4f0814a"}
+micro-rdk = {git = "https://github.com/viamrobotics/micro-rdk.git", features = ["esp32"], version = "0.2.8", rev = "4a00116"}
 
 [package.metadata.com.viam]
 module = true
