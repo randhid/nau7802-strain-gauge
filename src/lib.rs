@@ -40,14 +40,18 @@ pub struct Nau7802 {
 impl Nau7802 {
     // new wasn't made from the most recent sensor example, following from
     // https://github.com/viamrobotics/micro-rdk/blob/56615f4ace690f0571bba33d55cb530544c56aae/micro-rdk/src/common/mpu6050.rs#L57
-    pub fn new(mut i2c_handle: I2cHandleType, i2c_address: u8) -> Result<Self, SensorError> {
+    pub fn new(
+        mut i2c_handle: I2cHandleType,
+        i2c_address: u8,
+        scale_to_kg: f64,
+    ) -> Result<Self, SensorError> {
         // Reset the device
         i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_PU_CTRL, 0x01])?;
-    
+
         // configure
         i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_CTRL1, 0x30])?;
         i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_CTRL2, 0x07])?;
-    
+
         Ok(Nau7802 {
             i2c_handle,
             i2c_address,
@@ -76,6 +80,7 @@ impl Nau7802 {
         Ok(Arc::new(Mutex::new(Nau7802::new(
             i2c_handle,
             NAU7802_I2C_ADDRESS,
+            scale_to_kg,
         )?)))
     }
 
@@ -112,30 +117,34 @@ impl SensorT<f64> for Nau7802 {
         let reading = &self.read_adc()?;
         let mut readings = HashMap::new();
         readings.insert("raw_data".to_string(), *reading as f64); // does this even work, do I have to convert?
-        //log::debug!("getting raw data from nau7802 succeeded!");
+                                                                  //log::debug!("getting raw data from nau7802 succeeded!");
 
         // Store scaled weight in kilograms
         let scaled_reading = (*reading as f64) * self.scale_to_kg;
-        readings.insert("weight_kg".to_string(), scaled_reading)
-        
+        readings.insert("weight_kg".to_string(), scaled_reading);
+
         Ok(readings)
     }
 }
 
 impl Nau7802 {
-// Check the conversion of raw data to signed 24-bit value
-pub fn read_adc(&self) -> Result<i32, SensorError> {
-    let mut data: [u8; 3] = [0; 3];
-    self.i2c_handle.lock().unwrap()
-        .write_read_i2c(self.i2c_address, &[NAU7802_REG_ADC], &mut data)?;
-    let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
+    // Check the conversion of raw data to signed 24-bit value
+    pub fn read_adc(&self) -> Result<i32, SensorError> {
+        let mut data: [u8; 3] = [0; 3];
+        self.i2c_handle.lock().unwrap().write_read_i2c(
+            self.i2c_address,
+            &[NAU7802_REG_ADC],
+            &mut data,
+        )?;
+        let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
 
-    // Convert to signed 24-bit value
-    let adc_value = if raw_value & 0x800000 != 0 {
-        raw_value | !0xFFFFFF
-    } else {
-        raw_value
-    };
+        // Convert to signed 24-bit value
+        let adc_value = if raw_value & 0x800000 != 0 {
+            raw_value | !0xFFFFFF
+        } else {
+            raw_value
+        };
 
-    Ok(adc_value)
+        Ok(adc_value)
+    }
 }
