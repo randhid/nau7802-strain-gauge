@@ -46,8 +46,10 @@ impl Nau7802 {
         scale_to_kg: f64,
     ) -> Result<Self, SensorError> {
         // Reset the device
+        log::debug!("Writing to I2C register: {:#X}", NAU7802_REG_PU_CTRL);
         i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_PU_CTRL, 0x01])?;
-
+        log::debug!("Write successful");
+        
         // configure
         i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_CTRL1, 0x30])?;
         i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_CTRL2, 0x07])?;
