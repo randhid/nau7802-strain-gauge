@@ -7,7 +7,7 @@ use micro_rdk::DoCommand;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-// correct crates?
+// Necessary crate imports
 use micro_rdk::common::board::Board;
 use micro_rdk::common::i2c::{I2CHandle, I2cHandleType};
 use micro_rdk::common::sensor::{
@@ -29,38 +29,65 @@ const NAU7802_REG_ADC: u8 = 0x12;
 pub struct Nau7802 {
     i2c_handle: I2cHandleType,
     i2c_address: u8,
+    gain: u8,
     scale_to_kg: f64,
 }
 
-// TODOs:
-// Tare command from DoCommand to reset scale
-// Configuration attibute for max weight and add a reading element to return the actual weight
-// in kgs
-
 impl Nau7802 {
-    // new wasn't made from the most recent sensor example, following from
-    // https://github.com/viamrobotics/micro-rdk/blob/56615f4ace690f0571bba33d55cb530544c56aae/micro-rdk/src/common/mpu6050.rs#L57
-    pub fn new(
-        mut i2c_handle: I2cHandleType,
-        i2c_address: u8,
-        scale_to_kg: f64,
-    ) -> Result<Self, SensorError> {
-        // Reset the device
-        log::debug!("Writing to I2C register: {:#X}", NAU7802_REG_PU_CTRL);
-        i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_PU_CTRL, 0x01])?;
-        log::debug!("Write successful");
-        
-        // configure
-        i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_CTRL1, 0x30])?;
-        i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_CTRL2, 0x07])?;
-
-        Ok(Nau7802 {
+    pub fn new(i2c_handle: I2cHandleType, i2c_address: u8, scale_to_kg: f64) -> Self {
+        Nau7802 {
             i2c_handle,
             i2c_address,
+            gain,
             scale_to_kg,
-        })
+        }
     }
 
+    // Write to a register
+    fn write_register(&mut self, reg: u8, value: u8) -> Result<(), SensorError> {
+        self.i2c_handle.write_i2c(self.i2c_address, &[reg, value])?;
+        Ok(())
+    }
+
+    // Read from a register
+    fn read_register(&mut self, reg: u8) -> Result<u8, SensorError> {
+        let mut buf = [0u8; 1];
+        self.i2c_handle.write_read_i2c(self.i2c_address, &[reg], &mut buf)?;
+        Ok(buf[0])
+    }
+
+    // Calibrate the sensor
+    pub fn calibrate(&mut self) -> Result<(), SensorError> {
+        self.write_register(NAU7802_REG_CTRL2, 0x02)?;
+
+        // Wait for calibration to complete
+        loop {
+            let status = self.read_register(NAU7802_REG_PU_CTRL)?;
+            if (status & 0x08) != 0 { // 0x08 means we're done
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    // Read the ADC value and convert to a 24-bit signed integer
+    pub fn read_adc(&mut self) -> Result<i32, SensorError> {
+        let mut data = [0u8; 3];
+        self.i2c_handle.write_read_i2c(self.i2c_address, &[NAU7802_REG_ADC], &mut data)?;
+
+        // Convert to 24-bit signed integer
+        let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
+        let adc_value = if raw_value & 0x800000 != 0 {
+            raw_value | !0xFFFFFF
+        } else {
+            raw_value
+        };
+
+        Ok(adc_value)
+    }
+
+    // From configuration: sets up the sensor and returns a SensorType
     pub fn from_config(cfg: ConfigType, deps: Vec<Dependency>) -> Result<SensorType, SensorError> {
         let board = get_board_from_dependencies(deps);
         if board.is_none() {
@@ -83,13 +110,13 @@ impl Nau7802 {
             i2c_handle,
             NAU7802_I2C_ADDRESS,
             scale_to_kg,
-        )?)))
+            3, // Default gain set to 8x (which corresponds to value 3 in CTRL1 register)
+        ))))
     }
 
+    // Close the sensor
     pub fn close(&mut self) -> Result<(), SensorError> {
-        // reset the device again, is there a standby bit?
-        self.i2c_handle
-            .write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_PU_CTRL, 0x01])?;
+        self.write_register(NAU7802_REG_PU_CTRL, 0x01)?;
         Ok(())
     }
 }
@@ -116,37 +143,14 @@ impl Readings for Nau7802 {
 
 impl SensorT<f64> for Nau7802 {
     fn get_readings(&self) -> Result<TypedReadingsResult<f64>, SensorError> {
-        let reading = &self.read_adc()?;
+        let reading = self.read_adc()?;
         let mut readings = HashMap::new();
-        readings.insert("raw_data".to_string(), *reading as f64); // does this even work, do I have to convert?
-                                                                  //log::debug!("getting raw data from nau7802 succeeded!");
+        readings.insert("raw_data".to_string(), reading as f64);
 
         // Store scaled weight in kilograms
-        let scaled_reading = (*reading as f64) * self.scale_to_kg;
+        let scaled_reading = (reading as f64) * self.scale_to_kg;
         readings.insert("weight_kg".to_string(), scaled_reading);
 
         Ok(readings)
-    }
-}
-
-impl Nau7802 {
-    // Check the conversion of raw data to signed 24-bit value
-    pub fn read_adc(&self) -> Result<i32, SensorError> {
-        let mut data: [u8; 3] = [0; 3];
-        self.i2c_handle.lock().unwrap().write_read_i2c(
-            self.i2c_address,
-            &[NAU7802_REG_ADC],
-            &mut data,
-        )?;
-        let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
-
-        // Convert to signed 24-bit value
-        let adc_value = if raw_value & 0x800000 != 0 {
-            raw_value | !0xFFFFFF
-        } else {
-            raw_value
-        };
-
-        Ok(adc_value)
     }
 }
