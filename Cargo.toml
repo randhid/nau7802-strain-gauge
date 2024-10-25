@@ -7,7 +7,8 @@ resolver = "2"
 rust-version = "1.75"
 
 [dependencies]
-micro-rdk = {git = "https://github.com/viamrobotics/micro-rdk.git", features = ["esp32"], version = "0.2.8", rev = "4a00116"}
+log = "0.4.22"
+micro-rdk = {git = "https://github.com/viamrobotics/micro-rdk.git", features = ["esp32"], version = "0.3.0", rev = "bf1d6fa"}
 
 [package.metadata.com.viam]
 module = true

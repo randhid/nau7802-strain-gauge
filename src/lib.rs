@@ -6,6 +6,7 @@ use micro_rdk::common::status::{Status, StatusError};
 use micro_rdk::DoCommand;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::{thread, time};
 
 // correct crates?
 use micro_rdk::common::board::Board;
@@ -20,10 +21,10 @@ pub fn register_models(registry: &mut ComponentRegistry) -> Result<(), RegistryE
 }
 
 const NAU7802_I2C_ADDRESS: u8 = 0x2A;
-const NAU7802_REG_PU_CTRL: u8 = 0x00;
-const NAU7802_REG_CTRL1: u8 = 0x01;
-const NAU7802_REG_CTRL2: u8 = 0x02;
-const NAU7802_REG_ADC: u8 = 0x12;
+const REG_PU_CTRL: u8 = 0x00;
+const REG_CTRL1: u8 = 0x01;
+const REG_CTRL2: u8 = 0x02;
+const REG_ADC: u8 = 0x12;
 
 #[derive(DoCommand)]
 pub struct Nau7802 {
@@ -46,13 +47,40 @@ impl Nau7802 {
         scale_to_kg: f64,
     ) -> Result<Self, SensorError> {
         // Reset the device
-        log::debug!("Writing to I2C register: {:#X}", NAU7802_REG_PU_CTRL);
-        i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_PU_CTRL, 0x01])?;
-        log::debug!("Write successful");
-        
-        // configure
-        i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_CTRL1, 0x30])?;
-        i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_CTRL2, 0x07])?;
+        log::warn!("Writing to I2C register: {:#X}", REG_PU_CTRL);
+        i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[REG_PU_CTRL, 0x01])?;
+        log::warn!("Power-up command sent, waiting for device to be ready");
+
+        log::warn!("Writing to CTRL1 register: {:#X}", REG_CTRL1);
+        i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[REG_CTRL1, 0x30])?;
+        log::warn!("CTRL1 configuration complete");
+
+
+        // Wait for the device to be ready (PU_CTRL PWR_UP_RDY bit should be set)
+        let ten_millis = time::Duration::from_millis(10);
+        for _ in 0..100 {
+            let mut pu_ctrl = [0; 1]; // Buffer to store the PU_CTRL register value
+
+            // Read only the PU_CTRL register
+            i2c_handle.read_i2c(NAU7802_I2C_ADDRESS, &mut pu_ctrl)?;
+
+            // Check if the PWR_UP_RDY bit (bit 3) is set
+            if pu_ctrl[0] & 0x04 != 0 {
+                log::warn!("Device is ready after power-up");
+                break;
+            }
+
+            // Sleep for a short duration before checking again
+            thread::sleep(ten_millis);
+        }
+
+
+        log::warn!("Writing to CTRL2 register: {:#X}", REG_CTRL2);
+        i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &[REG_CTRL2, 0x07])?;
+        log::warn!("CTRL2 configuration complete");
+
+
+
 
         Ok(Nau7802 {
             i2c_handle,
@@ -89,8 +117,29 @@ impl Nau7802 {
     pub fn close(&mut self) -> Result<(), SensorError> {
         // reset the device again, is there a standby bit?
         self.i2c_handle
-            .write_i2c(NAU7802_I2C_ADDRESS, &[NAU7802_REG_PU_CTRL, 0x01])?;
+            .write_i2c(NAU7802_I2C_ADDRESS, &[REG_PU_CTRL, 0x01])?;
         Ok(())
+    }
+
+    // Check the conversion of raw data to signed 24-bit value
+    pub fn read_adc(&self) -> Result<i32, SensorError> {
+        let mut data: [u8; 3] = [0; 3];
+        self.i2c_handle.lock().unwrap().write_read_i2c(
+            self.i2c_address,
+            &[REG_ADC],
+            &mut data,
+        )?;
+        log::warn!("read raw adc data to I2C register: {:#02X?}", data);
+        let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
+
+        // Convert to signed 24-bit value
+        let adc_value = if raw_value & 0x800000 != 0 {
+            raw_value | !0xFFFFFF
+        } else {
+            raw_value
+        };
+
+        Ok(adc_value)
     }
 }
 
@@ -126,27 +175,5 @@ impl SensorT<f64> for Nau7802 {
         readings.insert("weight_kg".to_string(), scaled_reading);
 
         Ok(readings)
-    }
-}
-
-impl Nau7802 {
-    // Check the conversion of raw data to signed 24-bit value
-    pub fn read_adc(&self) -> Result<i32, SensorError> {
-        let mut data: [u8; 3] = [0; 3];
-        self.i2c_handle.lock().unwrap().write_read_i2c(
-            self.i2c_address,
-            &[NAU7802_REG_ADC],
-            &mut data,
-        )?;
-        let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
-
-        // Convert to signed 24-bit value
-        let adc_value = if raw_value & 0x800000 != 0 {
-            raw_value | !0xFFFFFF
-        } else {
-            raw_value
-        };
-
-        Ok(adc_value)
     }
 }
