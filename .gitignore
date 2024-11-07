@@ -16,3 +16,5 @@ Cargo.lock
 
 .micro-rdk-docker-caches/
 keg-scale/
+.embuild/
+.fid
