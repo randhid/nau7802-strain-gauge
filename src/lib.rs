@@ -6,8 +6,8 @@ use micro_rdk::common::status::{Status, StatusError};
 use micro_rdk::DoCommand;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use core::iter;
-use byteorder::ByteOrder as _;
+// use core::iter;
+// use byteorder::ByteOrder as _;
 use std::{thread, time};
 
 // correct crates?
@@ -62,9 +62,20 @@ pub const PU_CTRL_BIT_OSCS: u8 = 6;
 pub const PU_CTRL_BIT_AVDDS: u8 = 7;
 
 
-// REG0x01CTRL Bts
+// REG0x01CTRL1 Bts
+pub const CTRL1_GAIN: u8 = 2;
+pub const CTRL1_VLDO: u8 = 5;
+pub const CTRL1_DRDY_SEL: u8 = 6;
+pub const CTRL1_CRP: u8 = 7; 
 
-// PgaRegisterBits Constants
+// REG 0x02 CTRL2 Bits
+pub const CTRL2_BIT_CAL_MOD: u8 = 0;
+pub const CTRL2_BIT_CALS: u8 = 2;
+pub const CTRL2_BIT_CAL_ERROR: u8 = 3;
+pub const CTRL2_BIT_CRS: u8 = 4;
+pub const CTRL2_BIT_CHS: u8 = 7;
+
+// PGA Bits
 pub const PGA_BIT_CHP_DIS: u8 = 0;
 pub const PGA_BIT_INV: u8 = 3;
 pub const PGA_BIT_BYPASS_EN: u8 = 4;
@@ -72,18 +83,13 @@ pub const PGA_BIT_OUT_EN: u8 = 5;
 pub const PGA_BIT_LDO_MODE: u8 = 6;
 pub const PGA_BIT_RD_OTP_SEL: u8 = 7;
 
-// PgaPwrRegisterBits Constants
+// PGAPWR Bits
 pub const PGA_PWR_BIT_CURR: u8 = 0;
 pub const PGA_PWR_BIT_ADC_CURR: u8 = 2;
 pub const PGA_PWR_BIT_MSTR_BIAS_CURR: u8 = 4;
 pub const PGA_PWR_BIT_CAP_EN: u8 = 7;
 
-// Ctrl2RegisterBits Constants
-pub const CTRL2_BIT_CAL_MOD: u8 = 0;
-pub const CTRL2_BIT_CALS: u8 = 2;
-pub const CTRL2_BIT_CAL_ERROR: u8 = 3;
-pub const CTRL2_BIT_CRS: u8 = 4;
-pub const CTRL2_BIT_CHS: u8 = 7;
+
 
 // CTRL2 Calibration Status
 #[derive(PartialEq)]
@@ -131,9 +137,9 @@ pub struct Nau7802 {
     i2c_handle: I2cHandleType,
     i2c_address: u8,
     scale_to_kg: f64,
-    ldo: u8,
-    gain: u8,
-    sps: u8,
+    // ldo: u8,
+    // gain: u8,
+    // sps: u8,
 }
 
 impl Nau7802 {
@@ -150,31 +156,43 @@ impl Nau7802 {
             i2c_handle,
             i2c_address,
             scale_to_kg,
-            ldo,
-            gain,
-            sps,
+            // ldo,
+            // gain,
+            // sps,
         };
 
         sensor.start_reset()?;
+        log::warn!("started reset");
         // Sleep for 1 millisecond
-        thread::sleep(time::Duration::from_millis(1));        
+        thread::sleep(time::Duration::from_millis(10));        
         sensor.finish_reset()?;
+        log::warn!("finished reset");
         sensor.power_up()?;
+        // log::warn!("powered up");
+        thread::sleep(time::Duration::from_millis(50));        
         sensor.set_ldo(ldo)?;
+        log::warn!("set ldo");
         sensor.set_gain(gain)?;
+        log::warn!("set gain");
         sensor.set_sample_rate(sps)?;
+        log::warn!("set sample rate");
         sensor.misc_init()?;
+        log::warn!("misc init");
         sensor.begin_afe_calibration()?;
-
+        log::warn!("began calibration");
+        
         while sensor.poll_afe_calibration_status()? != AfeCalibrationStatus::Success {}
+        log::warn!("calibration ok");
 
         Ok(sensor)
     }
 
     pub fn close(&mut self) -> Result<(), SensorError> {
         // reset the device again, is there a standby bit?
-        self.i2c_handle
-            .write_i2c(NAU7802_I2C_ADDRESS, &[PU_CTRL, 0x01])?;
+        // reset the device again, is there a standby bit?
+        
+        self.clear_bit(PU_CTRL, PU_CTRL_BIT_PUA);
+        self.clear_bit(PU_CTRL, PU_CTRL_BIT_PUD);
         Ok(())
     }
 
@@ -208,6 +226,42 @@ impl Nau7802 {
             gain,
             sps,
         )?)))
+    }
+
+
+    pub fn rw(&mut self, address_reg: u8) -> Result<u8, I2CErrors> {
+        log::info!("DOING RW");
+        let mut buf: [u8;1] =[0xFF];
+        let r = self.i2c_handle.write_read_i2c(NAU7802_I2C_ADDRESS,&[address_reg],&mut buf);
+        log::info!("R is {:?}, out {:X?}", r,buf);
+        Ok(buf[0])
+    }
+    pub fn ww(&mut self, addr: u8, payload: u8) -> Result<(), I2CErrors> {
+        let buf: [u8;2] = [addr, payload];
+        let r = self.i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &buf);
+        log::info!("W is {:?}, out {:X?}", r,buf);
+
+        Ok(())
+    }
+
+    // Check the conversion of raw data to signed 24-bit value
+    pub fn read_adc(&self) -> Result<i32, SensorError> {
+        let mut data: [u8; 3] = [0; 3];
+        self.i2c_handle.lock().unwrap().write_read_i2c(
+            self.i2c_address,
+            &[ADC],
+            &mut data,
+        )?;
+        log::warn!("read raw adc data to I2C register: {:#02X?}", data);
+        let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
+
+        // Convert to signed 24-bit value
+        let adc_value = if raw_value & 0x800000 != 0 {
+            raw_value | !0xFFFFFF
+        } else {
+            raw_value
+        };
+        Ok(adc_value)
     }
 
     pub fn data_available(&mut self) -> Result<bool, I2CErrors> {
@@ -250,45 +304,55 @@ impl Nau7802 {
 
         self.set_function_helper(CTRL1, LDO_MASK, LDO_START_BIT, ldo as _)?;
 
-        self.set_bit(PU_CTRL, PU_CTRL_BIT_AVDDS)
+        self.ww(PU_CTRL, PU_CTRL_BIT_AVDDS)
     }
 
     pub fn power_up(&mut self) -> Result<(), I2CErrors> {
-        const NUM_ATTEMPTS: usize = 100;
+        self.ww(PU_CTRL, 0x6);
+        thread::sleep(time::Duration::from_millis(10));        
 
-        self.set_bit(PU_CTRL, PU_CTRL_BIT_PUD)?;
-        self.set_bit(PU_CTRL, PU_CTRL_BIT_PUA)?;
+            // Wait for PUR bit to be set - takes approximately 200µs
+        let mut counter = 0;
+        loop {
+            let llc = self.rw(PU_CTRL)?;
+            log::info!("LLC read is {:X}",llc);
 
-        let check_powered_up = || self.get_bit(PU_CTRL, PU_CTRL_BIT_PUR);
+            if llc != 0 {
+                break;
+            }
+            log::info!("LLC OK");
 
-        let powered_up = iter::repeat_with(check_powered_up)
-            .take(NUM_ATTEMPTS)
-            .filter_map(Result::ok)
-            .any(|rdy| rdy == true);
+            thread::sleep(time::Duration::from_millis(1));        
 
-        if powered_up {
-            Ok(())
-        } else {
-            Err(I2CErrors::I2CInvalidArgument("power up failed"))
-        }
+            if counter > 10 {
+                return Err(I2CErrors::I2CInvalidArgument("Could not power up chip")); // Error
+            }
+            counter += 1;
+         }
+    
+        self.set_bit(PU_CTRL, PU_CTRL_BIT_CS) 
     }
+    
+
 
     pub fn start_reset(&mut self) -> Result<(), I2CErrors> {
-        self.set_bit(PU_CTRL, PU_CTRL_BIT_RR )
+        // self.set_bit(PU_CTRL, PU_CTRL_BIT_RR );
+        self.rw(PU_CTRL);
+        Ok(())
     }
 
     pub fn finish_reset(&mut self) -> Result<(), I2CErrors> {
-        self.clear_bit(PU_CTRL, PU_CTRL_BIT_RR)
+        self.ww(PU_CTRL, PU_CTRL_BIT_RR)
     }
 
     pub fn misc_init(&mut self) -> Result<(), I2CErrors> {
         const TURN_OFF_CLK_CHPL: u8 = 0x30;
 
         // Turn off CLK_CHP. From 9.1 power on sequencing
-        self.set_register(ADC, TURN_OFF_CLK_CHPL)?;
+        self.ww(ADC, TURN_OFF_CLK_CHPL)?;
 
         // Enable 330pF decoupling cap on chan 2. From 9.14 application circuit note
-        self.set_bit(PGA, PGA_PWR_BIT_CAP_EN)
+        self.ww(PGA, PGA_PWR_BIT_CAP_EN)
     }
 
     pub fn set_function_helper(
@@ -308,36 +372,36 @@ impl Nau7802 {
     pub fn set_bit(&mut self, addr: u8, bit_idx:u8) ->Result<(), I2CErrors>{
         let mut val = self.get_register(addr)?;
         val |= 1 << bit_idx;
-        self.set_register(addr, val)
+        self.ww(addr, val)
     }
 
     pub fn clear_bit(&mut self, addr: u8, bit_idx: u8) -> Result<(), I2CErrors>{
         let mut val = self.get_register(addr)?;
         val &= !(1 << bit_idx);
-        self.set_register(addr, val)
+        self.ww(addr, val)
     }
 
     pub fn get_bit(&mut self, addr: u8, bit_idx:u8) -> Result<bool, I2CErrors> {
-        let mut val = self.get_register(addr)?;
+        let mut val = self.rw(addr)?;
         val &= 1 << bit_idx;
         Ok(val != 0)
     }
 
     pub fn set_register(&mut self, reg: u8, val:u8) -> Result<(), I2CErrors>{
         let transaction = [reg as _, val];
-
-        self.i2c_handle.write_i2c(self.i2c_address, &transaction)
+        log::warn!("writign transaction");
+        self.ww( reg, val)
     }
 
     pub fn get_register(&mut self, reg: u8) -> Result<u8, I2CErrors> {
         self.request_register(reg)?;
         let val:u8 =0;
-        self.i2c_handle.read_i2c(self.i2c_address,&mut [val]);
+        let _ = self.ww( reg, val);
         Ok(val)
     }
 
-    pub fn request_register(&mut self, reg: u8) -> Result<(), I2CErrors> {
-        self.i2c_handle.write_i2c(self.i2c_address, &[reg])
+    pub fn request_register(&mut self, reg: u8) -> Result<u8, I2CErrors> {
+        self.rw(reg)
     }
 }
 
@@ -363,25 +427,13 @@ impl Readings for Nau7802 {
 
 impl SensorT<f64> for Nau7802 {
     fn get_readings(&self) -> Result<TypedReadingsResult<f64>, SensorError> {
-        let data_available = self.data_available()?;
-    
-        if !data_available {
-                return Err(SensorError::SensorMethodUnimplemented("Data Unavaible"));
-        }
-
-        self.request_register(ADCO_B2)?;
-
-        let mut buf = [0u8; 3]; // will hold an i24
-        self.i2c_handle.read_i2c(self.i2c_address, & mut buf);
-
-        let adc_result = byteorder::BigEndian::read_i24(&buf);
-
+        let reading = &self.read_adc()?;
         let mut readings = HashMap::new();
-        readings.insert("raw_data".to_string(), adc_result as f64); // does this even work, do I have to convert?
+        readings.insert("raw_data".to_string(), *reading as f64); // does this even work, do I have to convert?
                                                                   //log::debug!("getting raw data from nau7802 succeeded!");
 
         // Store scaled weight in kilograms
-        let scaled_reading = (adc_result as f64) * self.scale_to_kg;
+        let scaled_reading = (*reading as f64) * self.scale_to_kg;
         readings.insert("weight_kg".to_string(), scaled_reading);
 
         Ok(readings)
