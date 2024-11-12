@@ -161,28 +161,110 @@ impl Nau7802 {
             // sps,
         };
 
-        sensor.start_reset()?;
+        let r = sensor.rw(PU_CTRL);
+        log::info!("1 got {:02X}", r.unwrap());
+        sensor.ww(PU_CTRL, 0x1 )?;
         log::warn!("started reset");
-        // Sleep for 1 millisecond
-        thread::sleep(time::Duration::from_millis(10));        
-        sensor.finish_reset()?;
-        log::warn!("finished reset");
-        sensor.power_up()?;
-        // log::warn!("powered up");
-        thread::sleep(time::Duration::from_millis(50));        
-        sensor.set_ldo(ldo)?;
-        log::warn!("set ldo");
-        sensor.set_gain(gain)?;
-        log::warn!("set gain");
-        sensor.set_sample_rate(sps)?;
-        log::warn!("set sample rate");
-        sensor.misc_init()?;
-        log::warn!("misc init");
-        sensor.begin_afe_calibration()?;
-        log::warn!("began calibration");
+        thread::sleep(time::Duration::from_millis(1));        
         
-        while sensor.poll_afe_calibration_status()? != AfeCalibrationStatus::Success {}
-        log::warn!("calibration ok");
+        let r = sensor.rw(PU_CTRL);
+        log::info!("2 got {:02X}", r.unwrap());
+        
+        let next : u8= 1 << 1;
+        sensor.ww(PU_CTRL, next )?;
+        thread::sleep(time::Duration::from_millis(1));        
+        let r = sensor.rw(PU_CTRL).unwrap();
+        log::info!("3 got {:02X}", r);
+
+        let next = r | 1<<2 ;
+        sensor.ww(PU_CTRL, next )?;
+        thread::sleep(time::Duration::from_millis(1));        
+        let r = sensor.rw(PU_CTRL).unwrap();
+        log::info!("3 got {:02X}", r);
+
+        let next = 1<< 1 | 1<<2 | 1<<7 ;
+        sensor.ww(PU_CTRL, next )?;
+        thread::sleep(time::Duration::from_millis(1));        
+        let r = sensor.rw(PU_CTRL).unwrap();
+        log::info!("3 got {:02X}", r);
+
+        let next : u8 = sensor.rw(PU_CTRL).unwrap();
+        let next = next | 1<<4;
+        sensor.ww(PU_CTRL, next )?;
+        thread::sleep(time::Duration::from_millis(1));        
+        let r = sensor.rw(PU_CTRL);
+        log::info!("7 got {:02X}", r.unwrap());
+        
+
+        let next : u8 =  1<<0 | 1<<1 | 1<<2| 1<<5|1<<3 ;
+        sensor.ww(CTRL1, next )?;
+        thread::sleep(time::Duration::from_millis(1));        
+        let r = sensor.rw(CTRL1);
+        log::info!("4 got {:02X}", r.unwrap());
+
+        let next = 0x30;
+        sensor.ww(ADC, next )?;
+        thread::sleep(time::Duration::from_millis(1));        
+        let r = sensor.rw(ADC);
+        log::info!("7 got {:02X}", r.unwrap());
+
+        let next =  1<<6;
+        sensor.ww(PGA, next )?;
+        thread::sleep(time::Duration::from_millis(1));        
+        let r = sensor.rw(PGA).unwrap();
+        log::info!("3 got {:02X}", r);
+
+
+        for _ in 1..100 {
+            let r = sensor.rw(PU_CTRL).unwrap();
+            if r & 1<<5 == 1 <<5{
+            let r = sensor.rw2(ADCO_B2, 3)?;
+            let mut r2:i32 = (r[0] as i32) << 16 | (r[1] as i32) << 8 |(r[2] as i32);
+            if r2 & 1<<23 == 1<<23 {
+                r2 = r2 |(0xFF000000u32 as i32);
+            }
+            
+            //log::info!("READ {}", r2);
+            }     
+            thread::sleep(time::Duration::from_millis(5));   
+        }
+
+        let next : u8 = 1 <<5;
+        sensor.ww(CTRL2, next )?;
+        thread::sleep(time::Duration::from_millis(1));        
+        let r = sensor.rw(CTRL2);
+        log::info!("6 got {:02X}", r.unwrap());
+
+        
+        let next : u8 = 1 <<5 |1 <<2;
+        sensor.ww(CTRL2, next )?;
+        thread::sleep(time::Duration::from_millis(1000));        
+        let r = sensor.rw(CTRL2);
+        log::info!("6 got {:02X}", r.unwrap());
+
+
+        let next : u8 = 1 <<5 |1 <<2 | 1 << 1;
+        sensor.ww(CTRL2, next )?;
+        thread::sleep(time::Duration::from_millis(1000));        
+        let r = sensor.rw(CTRL2);
+        log::info!("6 got {:02X}", r.unwrap());
+
+        let r = sensor.rw(PU_CTRL);
+        log::info!("7 got {:02X}", r.unwrap());
+
+        for _ in 1..100 {
+            let r = sensor.rw(PU_CTRL).unwrap();
+            if r & 1<<5 == 1 <<5{
+            let r = sensor.rw2(ADCO_B2, 3)?;
+            let mut r2:i32 = (r[0] as i32) << 16 | (r[1] as i32) << 8 |(r[2] as i32);
+            if r2 & 1<<23 == 1<<23 {
+                r2 = r2 |(0xFF000000u32 as i32);
+            }
+            
+            log::info!("READ {}", r2);
+            }     
+            thread::sleep(time::Duration::from_millis(5));   
+        }
 
         Ok(sensor)
     }
@@ -191,8 +273,11 @@ impl Nau7802 {
         // reset the device again, is there a standby bit?
         // reset the device again, is there a standby bit?
         
-        self.clear_bit(PU_CTRL, PU_CTRL_BIT_PUA);
-        self.clear_bit(PU_CTRL, PU_CTRL_BIT_PUD);
+        let next : u8 = 1 << PU_CTRL_BIT_PUA;
+        self.ww(PU_CTRL, next )?;
+        let next : u8 = 1 << PU_CTRL_BIT_PUD;
+        self.ww(PU_CTRL, next )?;
+
         Ok(())
     }
 
@@ -230,179 +315,35 @@ impl Nau7802 {
 
 
     pub fn rw(&mut self, address_reg: u8) -> Result<u8, I2CErrors> {
-        log::info!("DOING RW");
         let mut buf: [u8;1] =[0xFF];
         let r = self.i2c_handle.write_read_i2c(NAU7802_I2C_ADDRESS,&[address_reg],&mut buf);
-        log::info!("R is {:?}, out {:X?}", r,buf);
         Ok(buf[0])
     }
+
+    pub fn rw2(&mut self, address_reg: u8, len: u8) -> Result<Vec<u8>, I2CErrors> {
+        let mut buf = vec![0xFF;len.into()];
+        let r = self.i2c_handle.write_read_i2c(NAU7802_I2C_ADDRESS,&[address_reg],&mut buf);
+        Ok(buf)
+    }
+
     pub fn ww(&mut self, addr: u8, payload: u8) -> Result<(), I2CErrors> {
         let buf: [u8;2] = [addr, payload];
         let r = self.i2c_handle.write_i2c(NAU7802_I2C_ADDRESS, &buf);
-        log::info!("W is {:?}, out {:X?}", r,buf);
 
         Ok(())
     }
 
-    // Check the conversion of raw data to signed 24-bit value
-    pub fn read_adc(&self) -> Result<i32, SensorError> {
-        let mut data: [u8; 3] = [0; 3];
-        self.i2c_handle.lock().unwrap().write_read_i2c(
-            self.i2c_address,
-            &[ADC],
-            &mut data,
-        )?;
-        log::warn!("read raw adc data to I2C register: {:#02X?}", data);
-        let raw_value = ((data[0] as i32) << 16) | ((data[1] as i32) << 8) | (data[2] as i32);
-
-        // Convert to signed 24-bit value
-        let adc_value = if raw_value & 0x800000 != 0 {
-            raw_value | !0xFFFFFF
-        } else {
-            raw_value
-        };
-        Ok(adc_value)
-    }
-
-    pub fn data_available(&mut self) -> Result<bool, I2CErrors> {
-        self.get_bit(PU_CTRL, PU_CTRL_BIT_CR)
-    }
-
-    pub fn begin_afe_calibration(&mut self) -> Result<(), I2CErrors> {
-        self.set_bit(CTRL2, CTRL2_BIT_CALS)
-    }
-
-    pub fn poll_afe_calibration_status(&mut self) -> Result<AfeCalibrationStatus, I2CErrors> {
-        if self.get_bit(CTRL2, CTRL2_BIT_CALS)? {
-            return Ok(AfeCalibrationStatus::InProgress);
-        }
-
-        if self.get_bit(CTRL2, CTRL2_BIT_CAL_ERROR)? {
-            return Ok(AfeCalibrationStatus::Failure);
-        }
-
-        Ok(AfeCalibrationStatus::Success)
-    }
-
-    pub fn set_sample_rate(&mut self, sps: u8) -> Result<(), I2CErrors> {
-        const SPS_MASK: u8 = 0b10001111;
-        const SPS_START_BIT_IDX: u8 = 4;
-
-        self.set_function_helper(CTRL2, SPS_MASK, SPS_START_BIT_IDX, sps as _)
-    }
-
-    pub fn set_gain(&mut self, gain: u8) -> Result<(), I2CErrors> {
-        const GAIN_MASK: u8 = 0b11111000;
-        const GAIN_START_BIT: u8 = 0;
-
-        self.set_function_helper(CTRL1, GAIN_MASK, GAIN_START_BIT, gain as _)
-    }
-
-    pub fn set_ldo(&mut self, ldo: u8) -> Result<(), I2CErrors> {
-        const LDO_MASK: u8 = 0b11000111;
-        const LDO_START_BIT: u8 = 3;
-
-        self.set_function_helper(CTRL1, LDO_MASK, LDO_START_BIT, ldo as _)?;
-
-        self.ww(PU_CTRL, PU_CTRL_BIT_AVDDS)
-    }
-
-    pub fn power_up(&mut self) -> Result<(), I2CErrors> {
-        self.ww(PU_CTRL, 0x6);
-        thread::sleep(time::Duration::from_millis(10));        
-
-            // Wait for PUR bit to be set - takes approximately 200µs
-        let mut counter = 0;
-        loop {
-            let llc = self.rw(PU_CTRL)?;
-            log::info!("LLC read is {:X}",llc);
-
-            if llc != 0 {
-                break;
-            }
-            log::info!("LLC OK");
-
-            thread::sleep(time::Duration::from_millis(1));        
-
-            if counter > 10 {
-                return Err(I2CErrors::I2CInvalidArgument("Could not power up chip")); // Error
-            }
-            counter += 1;
-         }
-    
-        self.set_bit(PU_CTRL, PU_CTRL_BIT_CS) 
+    pub fn rwinlock(&self, address_reg: u8) -> Result<u8, I2CErrors> {
+        let mut buf: [u8;1] =[0xFF];
+        let r = self.i2c_handle.lock().unwrap().write_read_i2c(NAU7802_I2C_ADDRESS,&[address_reg],&mut buf);
+        Ok(buf[0])
     }
     
-
-
-    pub fn start_reset(&mut self) -> Result<(), I2CErrors> {
-        // self.set_bit(PU_CTRL, PU_CTRL_BIT_RR );
-        self.rw(PU_CTRL);
-        Ok(())
-    }
-
-    pub fn finish_reset(&mut self) -> Result<(), I2CErrors> {
-        self.ww(PU_CTRL, PU_CTRL_BIT_RR)
-    }
-
-    pub fn misc_init(&mut self) -> Result<(), I2CErrors> {
-        const TURN_OFF_CLK_CHPL: u8 = 0x30;
-
-        // Turn off CLK_CHP. From 9.1 power on sequencing
-        self.ww(ADC, TURN_OFF_CLK_CHPL)?;
-
-        // Enable 330pF decoupling cap on chan 2. From 9.14 application circuit note
-        self.ww(PGA, PGA_PWR_BIT_CAP_EN)
-    }
-
-    pub fn set_function_helper(
-        &mut self,
-        reg: u8,
-        mask: u8,
-        start_idx: u8,
-        new_val: u8,
-    ) -> Result<(), I2CErrors> {
-        let mut val = self.get_register(reg)?;
-        val &= mask;
-        val |= new_val << start_idx;
-
-        self.set_register(reg, val)
-    }
-
-    pub fn set_bit(&mut self, addr: u8, bit_idx:u8) ->Result<(), I2CErrors>{
-        let mut val = self.get_register(addr)?;
-        val |= 1 << bit_idx;
-        self.ww(addr, val)
-    }
-
-    pub fn clear_bit(&mut self, addr: u8, bit_idx: u8) -> Result<(), I2CErrors>{
-        let mut val = self.get_register(addr)?;
-        val &= !(1 << bit_idx);
-        self.ww(addr, val)
-    }
-
-    pub fn get_bit(&mut self, addr: u8, bit_idx:u8) -> Result<bool, I2CErrors> {
-        let mut val = self.rw(addr)?;
-        val &= 1 << bit_idx;
-        Ok(val != 0)
-    }
-
-    pub fn set_register(&mut self, reg: u8, val:u8) -> Result<(), I2CErrors>{
-        let transaction = [reg as _, val];
-        log::warn!("writign transaction");
-        self.ww( reg, val)
-    }
-
-    pub fn get_register(&mut self, reg: u8) -> Result<u8, I2CErrors> {
-        self.request_register(reg)?;
-        let val:u8 =0;
-        let _ = self.ww( reg, val);
-        Ok(val)
-    }
-
-    pub fn request_register(&mut self, reg: u8) -> Result<u8, I2CErrors> {
-        self.rw(reg)
-    }
+    pub fn rw2inlock(&self, address_reg: u8, len: u8) -> Result<Vec<u8>, I2CErrors> {
+        let mut buf = vec![0xFF;len.into()];
+        let r = self.i2c_handle.lock().unwrap().write_read_i2c(NAU7802_I2C_ADDRESS,&[address_reg],&mut buf);
+        Ok(buf)
+    }    
 }
 
 impl Status for Nau7802 {
@@ -427,13 +368,26 @@ impl Readings for Nau7802 {
 
 impl SensorT<f64> for Nau7802 {
     fn get_readings(&self) -> Result<TypedReadingsResult<f64>, SensorError> {
-        let reading = &self.read_adc()?;
+        let r = self.rwinlock(PU_CTRL).unwrap();
+        let mut r2:i32 =0 ;
+        if r & 1<<5 == 1 <<5{
+        let r = self.rw2inlock(ADCO_B2, 3)?;
+        r2 = (r[0] as i32) << 16 | (r[1] as i32) << 8 |(r[2] as i32);
+        if r2 & 1<<23 == 1<<23 {
+            r2 = r2 |(0xFF000000u32 as i32);
+        }
+        
+        log::info!("READ {}", r2);
+        }     
+        thread::sleep(time::Duration::from_millis(5));   
+        
+                
         let mut readings = HashMap::new();
-        readings.insert("raw_data".to_string(), *reading as f64); // does this even work, do I have to convert?
+        readings.insert("raw_data".to_string(), r2 as f64); // does this even work, do I have to convert?
                                                                   //log::debug!("getting raw data from nau7802 succeeded!");
 
         // Store scaled weight in kilograms
-        let scaled_reading = (*reading as f64) * self.scale_to_kg;
+        let scaled_reading = (r2 as f64) * self.scale_to_kg;
         readings.insert("weight_kg".to_string(), scaled_reading);
 
         Ok(readings)
