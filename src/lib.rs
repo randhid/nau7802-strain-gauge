@@ -176,13 +176,13 @@ impl Nau7802 {
         let r = sensor.rw(PU_CTRL).unwrap();
         log::info!("3 got {:02X}", r);
 
-        let next = r | 1<<2 ;
+        let next: u8x8 = r | 1<<2 ;
         sensor.ww(PU_CTRL, next )?;
         thread::sleep(time::Duration::from_millis(1));        
         let r = sensor.rw(PU_CTRL).unwrap();
         log::info!("3 got {:02X}", r);
 
-        let next = 1<< 1 | 1<<2 | 1<<7 ;
+        let next: u8 = 1<< 1 | 1<<2 | 1<<7 ;
         sensor.ww(PU_CTRL, next )?;
         thread::sleep(time::Duration::from_millis(1));        
         let r = sensor.rw(PU_CTRL).unwrap();
@@ -196,19 +196,19 @@ impl Nau7802 {
         log::info!("7 got {:02X}", r.unwrap());
         
 
-        let next : u8 =  1<<0 | 1<<1 | 1<<2| 1<<5|1<<3 ;
+        let next : u8 =  1<<0 | 1<<1 | 1<<2| 1<<5| 1<<3 ;
         sensor.ww(CTRL1, next )?;
         thread::sleep(time::Duration::from_millis(1));        
         let r = sensor.rw(CTRL1);
         log::info!("4 got {:02X}", r.unwrap());
 
-        let next = 0x30;
+        let next: u8 = 0x30;
         sensor.ww(ADC, next )?;
         thread::sleep(time::Duration::from_millis(1));        
         let r = sensor.rw(ADC);
         log::info!("7 got {:02X}", r.unwrap());
 
-        let next =  1<<6;
+        let next: u8 =  1<<6;
         sensor.ww(PGA, next )?;
         thread::sleep(time::Duration::from_millis(1));        
         let r = sensor.rw(PGA).unwrap();
