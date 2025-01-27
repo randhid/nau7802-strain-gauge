@@ -14,7 +14,7 @@ On the new component panel, copy and paste the following attribute template into
 
 ```json
 {
-    "attirbutes" : {
+    "attributes" : {
         "i2c_bus" : <String>,
         "scale_to_kg": f64,
         }  
